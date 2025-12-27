@@ -4,9 +4,13 @@ import { CodeOutput } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-export async function processSanskritamCode(code: string, script: string, isLintOnly: boolean = false): Promise<CodeOutput> {
+export async function processSanskritamCode(
+  code: string, 
+  script: string, 
+  mode: 'lint' | 'run' | 'debug' = 'run'
+): Promise<CodeOutput> {
   const systemInstruction = `
-    You are the core engine and linter of the "Sanskritam" programming language. 
+    You are the core engine, linter, and debugger of the "Sanskritam" programming language. 
     Sanskritam is inspired by Sanskrit grammar where word order is flexible.
     
     Keywords:
@@ -21,17 +25,23 @@ export async function processSanskritamCode(code: string, script: string, isLint
     
     Your task:
     1. Parse the provided code.
-    2. If there are syntax errors (missing 'tarhi' after 'yadi', unclosed strings, invalid keywords, mismatched 'samaptam'), identify them.
-    3. Return an array of errors with line, column, and message.
-    4. If no errors, simulate execution (stdout), provide C++ transpilation, and list semantic tokens.
-    5. If 'isLintOnly' is requested, focus primarily on errors and tokenization.
+    2. Check for syntax errors.
+    3. If mode is 'lint', only return errors and tokens.
+    4. If mode is 'run', return stdout, transpiled C++, tokens, and explanation.
+    5. If mode is 'debug', additionally return a 'debugTrace'. 
+       The 'debugTrace' is an array of snapshots for EACH line executed.
+       Each snapshot contains:
+       - line: The 1-based line number.
+       - variables: An object showing the current state of variables after that line executes.
+       - stdout: The cumulative output up to that point.
 
-    CRITICAL: For errors, provide the 'word' causing the error if possible.
+    Example Debug Snapshot for 'mulyam x = 5':
+    { "line": 1, "variables": {"x": 5}, "stdout": "" }
   `;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
-    contents: `${isLintOnly ? "[LINT MODE] " : ""}Process this Sanskritam code (${script} script):\n\n${code}`,
+    contents: `[MODE: ${mode.toUpperCase()}] Process this Sanskritam code (${script} script):\n\n${code}`,
     config: {
       systemInstruction,
       responseMimeType: "application/json",
@@ -62,6 +72,18 @@ export async function processSanskritamCode(code: string, script: string, isLint
                 word: { type: Type.STRING }
               },
               required: ["line", "column", "message"]
+            }
+          },
+          debugTrace: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                line: { type: Type.INTEGER },
+                variables: { type: Type.OBJECT },
+                stdout: { type: Type.STRING }
+              },
+              required: ["line", "variables", "stdout"]
             }
           }
         },
