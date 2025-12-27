@@ -87,7 +87,6 @@ const Editor: React.FC<EditorProps> = ({
           const isDevanagari = mode === ScriptMode.DEVANAGARI;
           const target = isDevanagari ? kw.devanagari : kw.roman;
           
-          // Enhanced highlighting for Devanagari: saturated amber-300 with multi-layered glow
           const keywordClass = isDevanagari 
             ? "text-amber-300 font-black drop-shadow-[0_0_2px_rgba(251,191,36,0.9)] drop-shadow-[0_0_12px_rgba(245,158,11,0.5)]" 
             : "text-amber-400 font-bold";
@@ -120,7 +119,7 @@ const Editor: React.FC<EditorProps> = ({
     return highlightedLines.join('');
   };
 
-  const handleAction = async (action: 'copy' | 'cut' | 'paste' | 'comment' | 'copy-devanagari') => {
+  const handleAction = async (action: 'copy' | 'cut' | 'paste' | 'comment' | 'copy-devanagari' | 'auto-format') => {
     if (!textareaRef.current) return;
     const textarea = textareaRef.current;
     const start = textarea.selectionStart;
@@ -165,15 +164,42 @@ const Editor: React.FC<EditorProps> = ({
         }
         break;
       case 'comment':
-        const lines = code.split('\n');
-        const currentLineIdx = code.substring(0, start).split('\n').length - 1;
-        const line = lines[currentLineIdx];
-        if (line.trim().startsWith('//')) {
-          lines[currentLineIdx] = line.replace('// ', '').replace('//', '');
-        } else {
-          lines[currentLineIdx] = '// ' + line;
+        {
+          const lines = code.split('\n');
+          const currentLineIdx = code.substring(0, start).split('\n').length - 1;
+          const line = lines[currentLineIdx];
+          if (line.trim().startsWith('//')) {
+            lines[currentLineIdx] = line.replace('// ', '').replace('//', '');
+          } else {
+            lines[currentLineIdx] = '// ' + line;
+          }
+          setCode(lines.join('\n'));
         }
-        setCode(lines.join('\n'));
+        break;
+      case 'auto-format':
+        {
+          const lines = code.split('\n');
+          let indentLevel = 0;
+          const formattedLines = lines.map((line) => {
+            const trimmed = line.trim();
+            if (trimmed === '') return '';
+            
+            // Outdent before applying if it's a block end
+            if (trimmed.includes(KEYWORDS.END.roman) || trimmed.includes(KEYWORDS.END.devanagari)) {
+              indentLevel = Math.max(0, indentLevel - 1);
+            }
+            
+            const result = '  '.repeat(indentLevel) + trimmed;
+            
+            // Indent after applying if it starts a block
+            if (trimmed.endsWith(KEYWORDS.THEN.roman) || trimmed.endsWith(KEYWORDS.THEN.devanagari)) {
+              indentLevel++;
+            }
+            
+            return result;
+          });
+          setCode(formattedLines.join('\n'));
+        }
         break;
     }
     closeContextMenu();
@@ -261,6 +287,14 @@ const Editor: React.FC<EditorProps> = ({
           style={{ top: contextMenu.y, left: contextMenu.x }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button 
+            onClick={() => handleAction('auto-format')}
+            className="w-full px-4 py-2 flex items-center gap-3 text-xs font-medium text-amber-400 hover:bg-amber-500 hover:text-slate-950 transition-colors group"
+          >
+            <svg className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+            Auto-format Code
+          </button>
+          <div className="my-1 border-t border-slate-800 mx-2"></div>
           <button 
             onClick={() => handleAction('copy')}
             className="w-full px-4 py-2 flex items-center gap-3 text-xs font-medium text-slate-300 hover:bg-amber-500 hover:text-slate-950 transition-colors group"

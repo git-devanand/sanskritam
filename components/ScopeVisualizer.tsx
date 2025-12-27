@@ -59,7 +59,7 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
   };
 
   const renderValue = (val: any, isPrev = false): React.ReactNode => {
-    if (val === null) return <span className="text-slate-500">null</span>;
+    if (val === null) return <span className="text-slate-500 italic">null</span>;
     
     if (Array.isArray(val)) {
       return (
@@ -101,12 +101,29 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
     return String(val);
   };
 
-  const getHistoryForVar = (name: string) => {
-    return debugTrace.slice(0, stepIndex + 1).map((snapshot, idx) => ({
+  /**
+   * Filters the history to show only when the variable's value actually changed
+   * to provide a cleaner timeline of mutations.
+   */
+  const getSignificantHistoryForVar = (name: string) => {
+    const fullHistory = debugTrace.slice(0, stepIndex + 1).map((snapshot, idx) => ({
       step: idx + 1,
       line: snapshot.line,
       value: snapshot.variables[name]
     })).filter(h => h.value !== undefined);
+
+    const significantHistory: typeof fullHistory = [];
+    let lastValue: any = undefined;
+
+    fullHistory.forEach((h) => {
+      const currentValString = JSON.stringify(h.value);
+      if (currentValString !== lastValue) {
+        significantHistory.push(h);
+        lastValue = currentValString;
+      }
+    });
+
+    return significantHistory;
   };
 
   return (
@@ -212,25 +229,44 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
                 {/* History Timeline Subsection */}
                 {isSelected && (
                   <div className="mt-4 pt-4 border-t border-slate-800 animate-in slide-in-from-top-2 duration-300">
-                    <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-3 flex items-center justify-between">
-                      <span>Historical Trace</span>
-                      <span className="opacity-50 font-mono">Steps 1 → {stepIndex + 1}</span>
+                    <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-4 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        <span>Mutation Timeline</span>
+                      </div>
+                      <span className="opacity-50 font-mono bg-slate-800 px-2 py-0.5 rounded">Changes only</span>
                     </div>
-                    <div className="space-y-3 relative pl-4">
-                      <div className="absolute left-[7px] top-0 bottom-0 w-[1px] bg-slate-800"></div>
-                      {getHistoryForVar(name).map((h, i) => (
-                        <div key={i} className="relative group/step">
-                          <div className={`absolute -left-[12.5px] top-1.5 w-2 h-2 rounded-full border border-slate-900 z-10 transition-all ${h.step === stepIndex + 1 ? 'bg-amber-500 scale-125' : 'bg-slate-700 group-hover/step:bg-slate-500'}`}></div>
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[9px] font-bold text-slate-500">STEP {h.step} <span className="mx-1 text-slate-700">|</span> LN {h.line}</span>
-                            </div>
-                            <div className={`text-[11px] font-mono break-all ${h.step === stepIndex + 1 ? 'text-amber-400 font-black' : 'text-slate-400 opacity-60'}`}>
-                              {renderValue(h.value)}
+                    <div className="space-y-4 relative pl-5">
+                      {/* Timeline Stem */}
+                      <div className="absolute left-[7px] top-1.5 bottom-1.5 w-[1px] bg-gradient-to-b from-amber-500/50 via-slate-800 to-slate-800/20"></div>
+                      
+                      {getSignificantHistoryForVar(name).map((h, i) => {
+                        const isLatest = i === getSignificantHistoryForVar(name).length - 1;
+                        return (
+                          <div key={i} className="relative group/step">
+                            {/* Connector Dot */}
+                            <div className={`absolute -left-[22.5px] top-1.5 w-3 h-3 rounded-full border-2 border-slate-900 z-10 transition-all ${
+                              isLatest 
+                                ? 'bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.6)] scale-110' 
+                                : 'bg-slate-700 group-hover/step:bg-slate-500'
+                            }`}></div>
+                            
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-black text-slate-500 uppercase">Step {h.step}</span>
+                                <span className="text-[8px] bg-slate-800/80 text-slate-400 px-1.5 py-0.5 rounded font-mono border border-slate-700/50">L{h.line}</span>
+                                {i === 0 && <span className="text-[8px] text-emerald-500/60 font-bold uppercase tracking-tighter">Initial</span>}
+                                {i > 0 && <span className="text-[8px] text-amber-500/60 font-bold uppercase tracking-tighter">Modified</span>}
+                              </div>
+                              <div className={`text-[11px] font-mono break-all leading-relaxed p-2 rounded-lg bg-slate-950/40 border border-slate-800/30 transition-all ${
+                                isLatest ? 'text-amber-400 font-bold border-amber-500/10' : 'text-slate-400 opacity-80'
+                              }`}>
+                                {renderValue(h.value)}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
