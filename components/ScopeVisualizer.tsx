@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { DebugSnapshot } from '../types';
 
 interface ScopeVisualizerProps {
@@ -14,10 +14,11 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
   const vars = currentSnapshot.variables;
   const prevVars = previousSnapshot?.variables || {};
   
-  const allVarNames = Array.from(new Set([...Object.keys(vars), ...Object.keys(prevVars)]));
+  const allVarNames = useMemo(() => Array.from(new Set([...Object.keys(vars), ...Object.keys(prevVars)])), [vars, prevVars]);
   
   const [highlightedVars, setHighlightedVars] = useState<Set<string>>(new Set());
   const [selectedVarHistory, setSelectedVarHistory] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<string>('all');
 
   useEffect(() => {
     const changed = new Set<string>();
@@ -37,7 +38,7 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
 
   const getVarType = (val: any): string => {
     if (val === null) return 'null';
-    if (Array.isArray(val)) return 'arr[' + val.length + ']';
+    if (Array.isArray(val)) return 'arr';
     if (typeof val === 'object') return 'obj';
     if (typeof val === 'number') return 'num';
     if (typeof val === 'boolean') return 'bool';
@@ -101,10 +102,6 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
     return String(val);
   };
 
-  /**
-   * Filters the history to show only when the variable's value actually changed
-   * to provide a cleaner timeline of mutations.
-   */
   const getSignificantHistoryForVar = (name: string) => {
     const fullHistory = debugTrace.slice(0, stepIndex + 1).map((snapshot, idx) => ({
       step: idx + 1,
@@ -126,15 +123,66 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
     return significantHistory;
   };
 
+  // Filter logic
+  const typeCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: allVarNames.length };
+    allVarNames.forEach(name => {
+      const type = getVarType(vars[name] ?? prevVars[name]);
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return counts;
+  }, [allVarNames, vars, prevVars]);
+
+  const filteredVarNames = useMemo(() => {
+    if (filterType === 'all') return allVarNames.sort();
+    return allVarNames.filter(name => getVarType(vars[name] ?? prevVars[name]) === filterType).sort();
+  }, [allVarNames, filterType, vars, prevVars]);
+
+  const filterOptions = [
+    { id: 'all', label: 'All' },
+    { id: 'num', label: 'Numbers' },
+    { id: 'str', label: 'Strings' },
+    { id: 'bool', label: 'Bools' },
+    { id: 'obj', label: 'Objects' },
+    { id: 'arr', label: 'Arrays' },
+  ];
+
   return (
-    <div className="flex flex-col gap-2 overflow-hidden">
-      <div className="space-y-2 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-        {allVarNames.length === 0 ? (
+    <div className="flex flex-col gap-3 overflow-hidden">
+      {/* Type Filters */}
+      <div className="flex flex-wrap gap-1.5 pb-2 border-b border-slate-800/50">
+        {filterOptions.map((opt) => {
+          const count = typeCounts[opt.id] || 0;
+          if (opt.id !== 'all' && count === 0) return null;
+          
+          return (
+            <button
+              key={opt.id}
+              onClick={() => setFilterType(opt.id)}
+              className={`px-2 py-0.5 rounded-md text-[9px] font-bold transition-all border flex items-center gap-1.5 ${
+                filterType === opt.id
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
+                  : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-600 hover:text-slate-300'
+              }`}
+            >
+              {opt.label}
+              <span className={`px-1 rounded-sm text-[8px] ${
+                filterType === opt.id ? 'bg-amber-600 text-amber-50' : 'bg-slate-700 text-slate-500'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="space-y-2 max-h-[310px] overflow-y-auto pr-2 custom-scrollbar">
+        {filteredVarNames.length === 0 ? (
           <div className="text-[10px] text-slate-600 italic text-center py-8 border border-dashed border-slate-800 rounded-xl">
-            No variables initialized at this step
+            {filterType === 'all' ? 'No variables initialized' : `No ${filterType} variables found`}
           </div>
         ) : (
-          allVarNames.sort().map((name) => {
+          filteredVarNames.map((name) => {
             const val = vars[name];
             const prevVal = prevVars[name];
             const isNew = prevVal === undefined && val !== undefined;
