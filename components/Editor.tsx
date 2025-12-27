@@ -87,8 +87,9 @@ const Editor: React.FC<EditorProps> = ({
           const isDevanagari = mode === ScriptMode.DEVANAGARI;
           const target = isDevanagari ? kw.devanagari : kw.roman;
           
+          // Enhanced highlighting for Devanagari: saturated amber-300 with multi-layered glow
           const keywordClass = isDevanagari 
-            ? "text-amber-100 font-black drop-shadow-[0_0_3px_rgba(245,158,11,0.6)]" 
+            ? "text-amber-300 font-black drop-shadow-[0_0_2px_rgba(251,191,36,0.9)] drop-shadow-[0_0_12px_rgba(245,158,11,0.5)]" 
             : "text-amber-400 font-bold";
 
           const regex = isDevanagari 
