@@ -14,18 +14,30 @@ export async function processSanskritamCode(
     Sanskritam is inspired by Sanskrit grammar where word order is flexible.
     
     Keywords:
-    - vadatu/वदतु: Print
+    - vadatu/वदतु: Speak/Print (equivalent to print)
     - yadi/यदि: If
-    - tarhi/तर्हि: Then
-    - karyam/कार्यम्: Function
+    - tarhi/तर्हि: Then (starts a block)
+    - anyatha/अन्यथा: Else
+    - karyam/कार्यम्: Function definition
     - mulyam/मूल्यम्: Variable declaration
+    - yavat/यावत्: While loop
+    - krute/कृते: For loop
+    - anuvartatu/अनुवर्ततु: Continue loop
+    - viramatu/विरमतु: Break loop
+    - pratyarpayatu/प्रत्यर्पयतु: Return value
     - samaptam/समाप्तम्: End of block
-    - satyam/सत्यम्: True
-    - asatyam/असत्यम्: False
+    - satyam/सत्यम्: True boolean
+    - asatyam/असत्यम्: False boolean
+    - prayatnam/प्रयत्नम्: Try block
+    - grihnatu/गृह्णातु: Catch block
+    - kshipatu/क्षिपतु: Throw exception
+    - shreni/श्रेणी: Class definition
+    - anayati/आनयति: Import module
+    - shunyam/शून्यम्: Null value
     
     Your task:
     1. Parse the provided code.
-    2. Check for syntax errors.
+    2. Check for syntax errors (e.g., missing 'samaptam', undefined variables).
     3. If mode is 'lint', only return errors and tokens.
     4. If mode is 'run', return stdout, transpiled C++, tokens, and explanation.
     5. If mode is 'debug', additionally return a 'debugTrace'. 
@@ -35,8 +47,7 @@ export async function processSanskritamCode(
        - variables: An object showing the current state of variables after that line executes.
        - stdout: The cumulative output up to that point.
 
-    Example Debug Snapshot for 'mulyam x = 5':
-    { "line": 1, "variables": {"x": 5}, "stdout": "" }
+    Sanskritam also uses Devanagari numerals (०-९). Map them to (0-9).
   `;
 
   const response = await ai.models.generateContent({

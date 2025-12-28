@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { ScriptMode, CodeOutput, SanskritamError, DebugSnapshot } from './types';
 import { KEYWORDS, SAMPLE_CODES, SNIPPETS, Snippet } from './constants';
 import Editor from './components/Editor';
@@ -7,6 +7,8 @@ import Visualizer from './components/Visualizer';
 import ExecutionChart from './components/ExecutionChart';
 import ScopeVisualizer from './components/ScopeVisualizer';
 import { processSanskritamCode } from './services/geminiService';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'HOME' | 'PLAYGROUND' | 'DOCS'>('HOME');
@@ -15,13 +17,18 @@ const App: React.FC = () => {
   const [output, setOutput] = useState<CodeOutput | null>(null);
   const [errors, setErrors] = useState<SanskritamError[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [isLinting, setIsLinting] = useState(false);
   const [engineError, setEngineError] = useState<string | null>(null);
   const [verboseMode, setVerboseMode] = useState(false);
   const [executionTime, setExecutionTime] = useState<number | null>(null);
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
 
   // Console specific state
   const [consoleTab, setConsoleTab] = useState<'STDOUT' | 'CPP' | 'LOGIC'>('STDOUT');
+
+  // Snippet search state
+  const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
 
   // Debugger states
   const [breakpoints, setBreakpoints] = useState<Set<number>>(new Set());
@@ -59,6 +66,86 @@ const App: React.FC = () => {
     });
   };
 
+  const handleDownloadCore = async () => {
+    setIsDownloading(true);
+    try {
+      const zip = new JSZip();
+      
+      // 1. Current Source Code
+      const ext = scriptMode === ScriptMode.DEVANAGARI ? 'dev.san' : 'rom.san';
+      zip.file(`project.${ext}`, code);
+
+      // 2. Transpiled C++ if available
+      if (output?.transpiled) {
+        zip.file('transpiled.cpp', output.transpiled);
+      }
+
+      // 3. Runtime Library Header (Sanskritam.h)
+      const runtimeHeader = `
+/**
+ * SANSKRITAM RUNTIME v1.0
+ * This header provides the mapping for Sanskritam transpiled C++ code.
+ */
+#ifndef SANSKRITAM_H
+#define SANSKRITAM_H
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include <map>
+
+namespace san {
+    template<typename T>
+    void vadatu(T val) {
+        std::cout << val << std::endl;
+    }
+    
+    // Semantic variable wrapper
+    struct mulyam {
+        // Implementation for dynamic typing in C++
+    };
+}
+
+#endif
+      `;
+      zip.file('Sanskritam.h', runtimeHeader.trim());
+
+      // 4. README / Documentation
+      const readme = `
+# Sanskritam SDK Starter Kit v1.0
+
+## Contents
+- \`project.${ext}\`: Your current source code.
+- \`transpiled.cpp\`: The C++ representation of your logic.
+- \`Sanskritam.h\`: The core runtime header for compilation.
+
+## How to use
+1. Install a C++ compiler (GCC/Clang).
+2. Use the transpiled C++ source and link it with Sanskritam.h.
+3. Enjoy high-performance semantic programming.
+
+## Language Specification
+Built on the principle of Anvaya (semantic connection).
+
+Keywords used:
+${Object.entries(KEYWORDS).map(([k, v]) => `- ${k}: ${v.roman} / ${v.devanagari} (${v.meaning})`).join('\n')}
+      `;
+      zip.file('README.md', readme.trim());
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      saveAs(content, 'sanskritam-core-v1.0.zip');
+      
+      setDownloadFeedback("SDK Downloaded!");
+      setTimeout(() => setDownloadFeedback(null), 3000);
+    } catch (err) {
+      console.error("Download failed", err);
+      setDownloadFeedback("Download failed");
+      setTimeout(() => setDownloadFeedback(null), 3000);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   // Real-time linting effect
   useEffect(() => {
     if (activeTab !== 'PLAYGROUND' || isDebugMode) return;
@@ -91,7 +178,6 @@ const App: React.FC = () => {
     setConsoleTab('STDOUT');
     const startTime = performance.now();
     try {
-      // Use 'debug' mode even for run to get line-by-line trace for the verbose option
       const result = await processSanskritamCode(code, scriptMode, 'debug');
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
@@ -157,10 +243,18 @@ const App: React.FC = () => {
     setStepIndex(parseInt(e.target.value, 10));
   };
 
+  const filteredSnippets = useMemo(() => {
+    const query = snippetSearchQuery.toLowerCase();
+    if (!query) return SNIPPETS;
+    return SNIPPETS.filter(s => 
+      s.name.toLowerCase().includes(query) || 
+      s.description.toLowerCase().includes(query)
+    );
+  }, [snippetSearchQuery]);
+
   const currentSnapshot: DebugSnapshot | null = 
     isDebugMode && output?.debugTrace ? output.debugTrace[stepIndex] : null;
 
-  // Deriving data for ExecutionChart: Token length as "Instruction Weight"
   const executionChartData = output?.tokens ? 
     output.tokens.slice(0, 8).map(t => ({ 
       label: t.word.length > 6 ? t.word.substring(0, 4) + '..' : t.word, 
@@ -185,8 +279,18 @@ const App: React.FC = () => {
           <button onClick={() => setActiveTab('HOME')} className={`hover:text-amber-400 transition-colors ${activeTab === 'HOME' ? 'text-amber-400' : ''}`}>Philosophy</button>
           <button onClick={() => setActiveTab('PLAYGROUND')} className={`hover:text-amber-400 transition-colors ${activeTab === 'PLAYGROUND' ? 'text-amber-400' : ''}`}>Compiler</button>
           <button onClick={() => setActiveTab('DOCS')} className={`hover:text-amber-400 transition-colors ${activeTab === 'DOCS' ? 'text-amber-400' : ''}`}>Documentation</button>
-          <button className="px-5 py-2 bg-amber-500 text-slate-950 rounded-full font-bold hover:bg-amber-400 transition-all transform active:scale-95">
+          <button 
+            onClick={handleDownloadCore}
+            disabled={isDownloading}
+            className="px-5 py-2 bg-amber-500 text-slate-950 rounded-full font-bold hover:bg-amber-400 transition-all transform active:scale-95 flex items-center gap-2 relative"
+          >
+            {isDownloading ? <div className="animate-spin w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full" /> : null}
             Download Core v1.0
+            {downloadFeedback && (
+              <span className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-emerald-500 text-slate-950 text-[10px] font-bold rounded-lg animate-in slide-in-from-top-2 fade-in whitespace-nowrap">
+                {downloadFeedback}
+              </span>
+            )}
           </button>
         </div>
       </nav>
@@ -457,27 +561,57 @@ const App: React.FC = () => {
 
               {/* Interactive Examples Bar */}
               <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
-                <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Interactive Examples</h3>
-                    <span className="text-[10px] text-slate-600">Select to load into editor</span>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Interactive Examples</h3>
+                        <div className="h-4 w-px bg-slate-800 hidden sm:block"></div>
+                        <span className="text-[10px] text-slate-600 hidden sm:block">Select to load into editor</span>
+                    </div>
+                    
+                    {/* Snippet Search Bar */}
+                    <div className="relative group max-w-xs w-full">
+                        <svg className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                        <input 
+                            type="text" 
+                            placeholder="Search examples..." 
+                            value={snippetSearchQuery}
+                            onChange={(e) => setSnippetSearchQuery(e.target.value)}
+                            className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-[10px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all"
+                        />
+                        {snippetSearchQuery && (
+                          <button 
+                            onClick={() => setSnippetSearchQuery('')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-white transition-colors"
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                          </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar">
-                    {SNIPPETS.map((snippet, idx) => (
-                        <button
-                            key={idx}
-                            onClick={() => loadSnippet(snippet)}
-                            className="flex-shrink-0 w-48 p-3 rounded-lg bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 transition-all text-left group"
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="w-6 h-6 bg-amber-500/10 rounded flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
-                                    <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+
+                <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar min-h-[90px]">
+                    {filteredSnippets.length > 0 ? (
+                        filteredSnippets.map((snippet, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => loadSnippet(snippet)}
+                                className="flex-shrink-0 w-48 p-3 rounded-lg bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 transition-all text-left group"
+                            >
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="w-6 h-6 bg-amber-500/10 rounded flex items-center justify-center group-hover:bg-amber-500/20 transition-colors">
+                                        <svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+                                    </div>
+                                    <span className="text-[8px] font-bold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded uppercase">{scriptMode}</span>
                                 </div>
-                                <span className="text-[8px] font-bold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded uppercase">{scriptMode}</span>
-                            </div>
-                            <div className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors mb-1 truncate">{snippet.name}</div>
-                            <div className="text-[10px] text-slate-500 line-clamp-1">{snippet.description}</div>
-                        </button>
-                    ))}
+                                <div className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors mb-1 truncate">{snippet.name}</div>
+                                <div className="text-[10px] text-slate-500 line-clamp-1">{snippet.description}</div>
+                            </button>
+                        ))
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center py-6 text-[10px] text-slate-600 italic border border-dashed border-slate-800 rounded-xl">
+                            No examples matching "{snippetSearchQuery}"
+                        </div>
+                    )}
                 </div>
               </div>
             </div>

@@ -32,6 +32,8 @@ const Editor: React.FC<EditorProps> = ({
   const highlightRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0 });
+  const [copiedStatus, setCopiedStatus] = useState<string | null>(null);
+  const [activeError, setActiveError] = useState<SanskritamError | null>(null);
 
   const handleScroll = () => {
     if (textareaRef.current && highlightRef.current && gutterRef.current) {
@@ -56,10 +58,42 @@ const Editor: React.FC<EditorProps> = ({
     setContextMenu(prev => ({ ...prev, visible: false }));
   };
 
+  const handleClick = (e: React.MouseEvent) => {
+    closeContextMenu();
+    
+    // Check if clicked on an error
+    if (!textareaRef.current) return;
+    const pos = textareaRef.current.selectionStart;
+    const lines = code.substring(0, pos).split('\n');
+    const lineNum = lines.length;
+    const colNum = lines[lines.length - 1].length + 1;
+
+    // Find if any error covers this line/column
+    const errorAtClick = errors.find(err => {
+      if (err.line !== lineNum) return false;
+      if (!err.word) return err.column === colNum;
+      
+      // If error has a word, check if colNum is within the word's range on that line
+      const lineText = code.split('\n')[lineNum - 1];
+      const wordIdx = lineText.indexOf(err.word);
+      if (wordIdx === -1) return err.column === colNum;
+      
+      const wordStartCol = wordIdx + 1;
+      const wordEndCol = wordStartCol + err.word.length;
+      return colNum >= wordStartCol && colNum <= wordEndCol;
+    });
+
+    if (errorAtClick) {
+      setActiveError(errorAtClick);
+    } else {
+      setActiveError(null);
+    }
+  };
+
   useEffect(() => {
-    const handleClick = () => closeContextMenu();
-    window.addEventListener('click', handleClick);
-    return () => window.removeEventListener('click', handleClick);
+    const handleGlobalClick = () => closeContextMenu();
+    window.addEventListener('click', handleGlobalClick);
+    return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
 
   const highlightCode = (input: string) => {
@@ -108,7 +142,7 @@ const Editor: React.FC<EditorProps> = ({
         if (err.word) {
           const escapedWord = err.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           const errRegex = new RegExp(`(${escapedWord})`, 'g');
-          html = html.replace(errRegex, `<span class="border-b-2 border-red-500 bg-red-500/10 cursor-help" title="${err.message}">$1</span>`);
+          html = html.replace(errRegex, `<span class="border-b-2 border-red-500 bg-red-500/10 cursor-help" title="Click to inspect error">$1</span>`);
         }
       });
 
@@ -117,6 +151,11 @@ const Editor: React.FC<EditorProps> = ({
     });
 
     return highlightedLines.join('');
+  };
+
+  const showFeedback = (msg: string) => {
+    setCopiedStatus(msg);
+    setTimeout(() => setCopiedStatus(null), 2000);
   };
 
   const handleAction = async (action: 'copy' | 'cut' | 'paste' | 'comment' | 'copy-devanagari' | 'auto-format') => {
@@ -135,16 +174,26 @@ const Editor: React.FC<EditorProps> = ({
           const currentLineIdx = code.substring(0, start).split('\n').length - 1;
           await navigator.clipboard.writeText(lines[currentLineIdx]);
         }
+        showFeedback("Copied!");
         break;
       case 'copy-devanagari':
         {
           const textToConvert = selectedText || code.split('\n')[code.substring(0, start).split('\n').length - 1];
           let converted = textToConvert;
+          
           Object.values(KEYWORDS).forEach(kw => {
             const regex = new RegExp(`\\b${kw.roman}\\b`, 'g');
             converted = converted.replace(regex, kw.devanagari);
           });
+
+          const numMap: Record<string, string> = {
+            '0': '०', '1': '१', '2': '२', '3': '३', '4': '४',
+            '5': '५', '6': '६', '7': '७', '8': '८', '9': '९'
+          };
+          converted = converted.replace(/[0-9]/g, (m) => numMap[m]);
+
           await navigator.clipboard.writeText(converted);
+          showFeedback("Copied as Devanagari!");
         }
         break;
       case 'cut':
@@ -152,6 +201,7 @@ const Editor: React.FC<EditorProps> = ({
           await navigator.clipboard.writeText(selectedText);
           const newCode = code.substring(0, start) + code.substring(end);
           setCode(newCode);
+          showFeedback("Cut to clipboard");
         }
         break;
       case 'paste':
@@ -184,14 +234,12 @@ const Editor: React.FC<EditorProps> = ({
             const trimmed = line.trim();
             if (trimmed === '') return '';
             
-            // Outdent before applying if it's a block end
             if (trimmed.includes(KEYWORDS.END.roman) || trimmed.includes(KEYWORDS.END.devanagari)) {
               indentLevel = Math.max(0, indentLevel - 1);
             }
             
             const result = '  '.repeat(indentLevel) + trimmed;
             
-            // Indent after applying if it starts a block
             if (trimmed.endsWith(KEYWORDS.THEN.roman) || trimmed.endsWith(KEYWORDS.THEN.devanagari)) {
               indentLevel++;
             }
@@ -199,6 +247,7 @@ const Editor: React.FC<EditorProps> = ({
             return result;
           });
           setCode(formattedLines.join('\n'));
+          showFeedback("Code Formatted");
         }
         break;
     }
@@ -214,6 +263,7 @@ const Editor: React.FC<EditorProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-900 border border-slate-700 rounded-xl overflow-hidden shadow-2xl relative">
+      {/* Editor Header */}
       <div className="bg-slate-800 px-4 py-2 flex items-center justify-between border-b border-slate-700 z-20">
         <div className="flex space-x-2">
           <div className="w-3 h-3 rounded-full bg-red-500"></div>
@@ -242,14 +292,19 @@ const Editor: React.FC<EditorProps> = ({
             const lineNum = i + 1;
             const hasBreakpoint = breakpoints.has(lineNum);
             const isExecuting = currentDebugLine === lineNum;
+            const hasError = errors.some(e => e.line === lineNum);
+
             return (
               <div 
                 key={i} 
                 onClick={() => toggleBreakpoint(lineNum)}
                 className={`h-7 w-full flex items-center justify-center cursor-pointer transition-colors group ${isExecuting ? 'bg-amber-500/20' : 'hover:bg-slate-800'}`}
               >
+                {hasError && !hasBreakpoint && (
+                    <div className="absolute left-1 w-1 h-4 bg-red-500/50 rounded-full"></div>
+                )}
                 <div className={`w-2.5 h-2.5 rounded-full transition-all ${hasBreakpoint ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' : 'bg-transparent group-hover:bg-red-500/20'}`}></div>
-                <span className={`text-[10px] font-mono ml-1.5 w-4 text-right transition-colors ${isExecuting ? 'text-amber-400 font-bold' : 'text-slate-600'}`}>
+                <span className={`text-[10px] font-mono ml-1.5 w-4 text-right transition-colors ${isExecuting ? 'text-amber-400 font-bold' : hasError ? 'text-red-400' : 'text-slate-600'}`}>
                   {lineNum}
                 </span>
               </div>
@@ -271,14 +326,71 @@ const Editor: React.FC<EditorProps> = ({
             ref={textareaRef}
             value={code}
             onContextMenu={handleContextMenu}
-            onChange={(e) => setCode(e.target.value)}
+            onClick={handleClick}
+            onChange={(e) => { setCode(e.target.value); setActiveError(null); }}
             onScroll={handleScroll}
             spellCheck={false}
             className={`absolute inset-0 w-full h-full px-4 py-6 bg-transparent resize-none focus:outline-none code-font text-lg leading-7 caret-white text-transparent selection:bg-amber-500/30 overflow-auto ${mode === ScriptMode.DEVANAGARI ? 'devanagari' : ''}`}
             placeholder={mode === ScriptMode.DEVANAGARI ? 'अत्र कोडं लिखन्तु...' : 'Write code here...'}
           />
+
+          {/* Error Insight Popover */}
+          {activeError && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[120] w-80 bg-slate-900/95 backdrop-blur-xl border border-red-500/30 rounded-2xl shadow-2xl p-5 animate-in zoom-in-95 fade-in duration-200">
+               <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
+                    <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Error Insight</span>
+                  </div>
+                  <button onClick={() => setActiveError(null)} className="text-slate-500 hover:text-white transition-colors">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+               </div>
+               
+               <div className="space-y-4">
+                  <div className="text-sm font-medium text-slate-200 leading-relaxed">
+                    {activeError.message}
+                  </div>
+                  
+                  {activeError.word && (
+                    <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                       <span className="text-[9px] text-slate-500 uppercase block mb-1">Offending Word:</span>
+                       <code className="text-amber-400 font-mono text-xs">{activeError.word}</code>
+                    </div>
+                  )}
+
+                  <div className="pt-3 border-t border-slate-800">
+                    <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <div className="text-[11px] text-slate-400">
+                           <span className="font-bold text-amber-500/80">Sanskritam Pro Tip:</span> Try checking the block endings (<code className="text-amber-200">samaptam</code>) or ensuring your variable declarations start with <code className="text-amber-200">mulyam</code>.
+                        </div>
+                    </div>
+                  </div>
+               </div>
+               
+               <div className="mt-5 flex justify-end">
+                  <button 
+                    onClick={() => setActiveError(null)}
+                    className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-bold rounded-lg transition-all"
+                  >
+                    Dismiss
+                  </button>
+               </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Copied Feedback Notification */}
+      {copiedStatus && (
+        <div className="absolute bottom-12 right-6 z-[110] bg-emerald-500 text-slate-950 px-4 py-2 rounded-lg font-bold text-xs shadow-2xl animate-in slide-in-from-bottom-2 fade-in duration-200">
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+            {copiedStatus}
+          </div>
+        </div>
+      )}
 
       {/* Custom Context Menu */}
       {contextMenu.visible && (

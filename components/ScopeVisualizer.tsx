@@ -59,47 +59,95 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
     return null;
   };
 
-  const renderValue = (val: any, isPrev = false): React.ReactNode => {
-    if (val === null) return <span className="text-slate-500 italic">null</span>;
+  /**
+   * Internal component to render values with expansion capabilities for complex types.
+   */
+  const ValueExplorer: React.FC<{ value: any; isPrev?: boolean; depth?: number }> = ({ value, isPrev = false, depth = 0 }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    if (value === null) return <span className="text-slate-500 italic">null</span>;
     
-    if (Array.isArray(val)) {
-      return (
-        <span className="text-slate-400">
-          [
-          {val.map((item, i) => (
-            <React.Fragment key={i}>
-              {renderValue(item, isPrev)}
-              {i < val.length - 1 ? ', ' : ''}
-            </React.Fragment>
-          ))}
-          ]
-        </span>
-      );
+    const type = getVarType(value);
+    const isComplex = type === 'obj' || type === 'arr';
+
+    if (!isComplex) {
+      if (typeof value === 'string') return <span className={isPrev ? "text-rose-300/70" : "text-emerald-400"}>"{value}"</span>;
+      if (typeof value === 'number') return <span className={isPrev ? "text-rose-300/70" : "text-blue-400"}>{value}</span>;
+      if (typeof value === 'boolean') return <span className={isPrev ? "text-rose-300/70" : "text-pink-400"}>{String(value)}</span>;
+      return <span className="text-slate-300">{String(value)}</span>;
     }
-    
-    if (typeof val === 'object') {
-      const entries = Object.entries(val);
+
+    const toggle = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsExpanded(!isExpanded);
+    };
+
+    if (type === 'arr') {
+      const items = value as any[];
+      if (items.length === 0) return <span className="text-slate-500">[]</span>;
+      
       return (
-        <span className="text-slate-400">
-          {'{ '}
-          {entries.map(([k, v], i) => (
-            <React.Fragment key={k}>
-              <span className="text-amber-200/60 font-medium">{k}</span>
-              <span className="text-slate-600 mx-1">:</span>
-              {renderValue(v, isPrev)}
-              {i < entries.length - 1 ? ', ' : ''}
-            </React.Fragment>
-          ))}
-          {' }'}
-        </span>
+        <div className="inline-block align-top">
+          <button 
+            onClick={toggle}
+            className="flex items-center gap-1 hover:text-amber-400 transition-colors group/toggle"
+          >
+            <span className="text-slate-600 font-bold group-hover/toggle:text-amber-500">
+              {isExpanded ? '▼' : '▶'}
+            </span>
+            <span className="text-slate-500">Array({items.length})</span>
+            {!isExpanded && (
+              <span className="text-slate-600 text-[10px] bg-slate-800/50 px-1 rounded">
+                [ {items.length > 2 ? `${getVarType(items[0])}, ...` : items.map(getVarType).join(', ')} ]
+              </span>
+            )}
+          </button>
+          {isExpanded && (
+            <div className="pl-4 mt-1 border-l border-slate-800 space-y-1 animate-in slide-in-from-left-1 duration-200">
+              {items.map((item, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="text-slate-600 text-[10px] w-4 font-mono">{i}</span>
+                  <ValueExplorer value={item} isPrev={isPrev} depth={depth + 1} />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       );
     }
 
-    if (typeof val === 'string') return <span className={isPrev ? "text-rose-300/70" : "text-emerald-400"}>"{val}"</span>;
-    if (typeof val === 'number') return <span className={isPrev ? "text-rose-300/70" : "text-blue-400"}>{val}</span>;
-    if (typeof val === 'boolean') return <span className={isPrev ? "text-rose-300/70" : "text-pink-400"}>{String(val)}</span>;
-    
-    return String(val);
+    // Object Rendering
+    const entries = Object.entries(value);
+    if (entries.length === 0) return <span className="text-slate-500">{}</span>;
+
+    return (
+      <div className="inline-block align-top">
+        <button 
+          onClick={toggle}
+          className="flex items-center gap-1 hover:text-amber-400 transition-colors group/toggle"
+        >
+          <span className="text-slate-600 font-bold group-hover/toggle:text-amber-500">
+            {isExpanded ? '▼' : '▶'}
+          </span>
+          <span className="text-slate-500">Object</span>
+          {!isExpanded && (
+            <span className="text-slate-600 text-[10px] bg-slate-800/50 px-1 rounded">
+              {'{'} {entries.slice(0, 1).map(([k]) => k).join(', ')}{entries.length > 1 ? ', ...' : ''} {'}'}
+            </span>
+          )}
+        </button>
+        {isExpanded && (
+          <div className="pl-4 mt-1 border-l border-slate-800 space-y-1 animate-in slide-in-from-left-1 duration-200">
+            {entries.map(([k, v]) => (
+              <div key={k} className="flex items-start gap-2">
+                <span className="text-amber-200/60 font-medium text-[11px] font-mono shrink-0">{k}:</span>
+                <ValueExplorer value={v} isPrev={isPrev} depth={depth + 1} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const getSignificantHistoryForVar = (name: string) => {
@@ -253,7 +301,7 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
                     isNew ? 'text-emerald-400' : 
                     'text-slate-300'
                   }`}>
-                    {isRemoved ? renderValue(prevVal) : renderValue(val)}
+                    {isRemoved ? <ValueExplorer value={prevVal} isPrev /> : <ValueExplorer value={val} />}
                   </div>
                   
                   {isChanged && !isSelected && (
@@ -268,7 +316,7 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
                       <div className={`text-[10px] font-mono break-all line-through ${
                         valIsPrimitive ? 'text-rose-300/50' : 'text-slate-500/60 opacity-40 italic'
                       }`}>
-                        {renderValue(prevVal, true)}
+                        <ValueExplorer value={prevVal} isPrev />
                       </div>
                     </div>
                   )}
@@ -309,7 +357,7 @@ const ScopeVisualizer: React.FC<ScopeVisualizerProps> = ({ debugTrace, stepIndex
                               <div className={`text-[11px] font-mono break-all leading-relaxed p-2 rounded-lg bg-slate-950/40 border border-slate-800/30 transition-all ${
                                 isLatest ? 'text-amber-400 font-bold border-amber-500/10' : 'text-slate-400 opacity-80'
                               }`}>
-                                {renderValue(h.value)}
+                                <ValueExplorer value={h.value} />
                               </div>
                             </div>
                           </div>
