@@ -25,7 +25,9 @@ const App: React.FC = () => {
   const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
 
   // Console specific state
-  const [consoleTab, setConsoleTab] = useState<'STDOUT' | 'CPP' | 'LOGIC'>('STDOUT');
+  const [consoleTab, setConsoleTab] = useState<'STDOUT' | 'CPP' | 'TERMINAL'>('STDOUT');
+  const [terminalLines, setTerminalLines] = useState<string[]>(["Sanskritam SPL Compiler v1.0.4", "Type 'splc help' for commands."]);
+  const [terminalInput, setTerminalInput] = useState("");
 
   // Snippet search state
   const [snippetSearchQuery, setSnippetSearchQuery] = useState('');
@@ -37,6 +39,7 @@ const App: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeed, setPlaySpeed] = useState(800);
   const playTimerRef = useRef<number | null>(null);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
 
   const toggleScript = () => {
     const newMode = scriptMode === ScriptMode.ROMAN ? ScriptMode.DEVANAGARI : ScriptMode.ROMAN;
@@ -73,9 +76,9 @@ const App: React.FC = () => {
     setIsDownloading(true);
     try {
       const zip = new JSZip();
-      const ext = scriptMode === ScriptMode.DEVANAGARI ? 'dev.san' : 'rom.san';
+      const ext = 'spl'; // Unified extension
       zip.file(`project.${ext}`, code);
-      if (output?.transpiled) zip.file('transpiled.cpp', output.transpiled);
+      if (output?.transpiled) zip.file('main.cpp', output.transpiled);
       const runtimeHeader = `
 #ifndef SANSKRITAM_H
 #define SANSKRITAM_H
@@ -87,10 +90,10 @@ namespace san {
 }
 #endif`;
       zip.file('Sanskritam.h', runtimeHeader.trim());
-      const readme = `# Sanskritam SDK Starter Kit v1.0\n\nKeywords:\n${Object.entries(KEYWORDS).map(([k, v]) => `- ${k}: ${v.roman} / ${v.devanagari}`).join('\n')}`;
+      const readme = `# Sanskritam SPL SDK v1.0\n\nTo compile: splc project.spl\nTo run: ./project\n\nKeywords:\n${Object.entries(KEYWORDS).map(([k, v]) => `- ${k}: ${v.roman} / ${v.devanagari}`).join('\n')}`;
       zip.file('README.md', readme.trim());
       const content = await zip.generateAsync({ type: 'blob' });
-      FileSaver.saveAs(content, 'sanskritam-core-v1.0.zip');
+      FileSaver.saveAs(content, 'sanskritam-spl-v1.0.zip');
       setDownloadFeedback("SDK Downloaded!");
       setTimeout(() => setDownloadFeedback(null), 3000);
     } catch (err) {
@@ -114,12 +117,12 @@ namespace san {
     return () => clearTimeout(timer);
   }, [code, scriptMode, activeTab, isDebugMode]);
 
-  const runCode = async () => {
+  const runCode = async (isManual = true) => {
     setIsLoading(true);
     setEngineError(null);
     setExecutionTime(null);
     stopDebug();
-    setConsoleTab('STDOUT');
+    if (isManual) setConsoleTab('STDOUT');
     const startTime = performance.now();
     
     try {
@@ -130,8 +133,10 @@ namespace san {
       setExecutionTime(endTime - startTime);
       setOutput(result);
       setErrors(result.errors || []);
+      return result;
     } catch (err: any) { 
       setEngineError(err.message || 'Execution failed'); 
+      return null;
     } finally { 
       setIsLoading(false); 
     }
@@ -226,6 +231,45 @@ namespace san {
     setStepIndex(parseInt(e.target.value, 10));
   };
 
+  const handleTerminalSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cmd = terminalInput.trim().toLowerCase();
+    const newLines = [...terminalLines, `> ${terminalInput}`];
+    
+    if (cmd === 'clear') {
+      setTerminalLines([]);
+    } else if (cmd.startsWith('splc')) {
+      const parts = cmd.split(' ');
+      if (parts.length === 1 || parts[1] === 'help') {
+        newLines.push("Usage: splc [file.spl]");
+        newLines.push("Example: splc project.spl");
+      } else if (parts[1].endsWith('.spl') || parts[1] === '*.spl') {
+        newLines.push(`Compiling ${parts[1]}...`);
+        const result = await runCode(false);
+        if (result && (!result.errors || result.errors.length === 0)) {
+          newLines.push("Compilation successful.");
+          newLines.push("Output:");
+          newLines.push(result.stdout || "(No output)");
+        } else {
+          newLines.push("Compilation failed with errors.");
+          result?.errors?.forEach(err => newLines.push(`L${err.line}: ${err.message}`));
+        }
+      } else {
+        newLines.push(`Error: Unknown target '${parts[1]}'`);
+      }
+    } else if (cmd === 'run') {
+       newLines.push("Executing active buffer...");
+       const result = await runCode(false);
+       newLines.push(result?.stdout || "");
+    } else {
+      newLines.push(`Command not found: ${cmd}`);
+    }
+    
+    setTerminalLines(newLines);
+    setTerminalInput("");
+    setTimeout(() => terminalEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+  };
+
   const filteredSnippets = useMemo(() => {
     const query = snippetSearchQuery.toLowerCase();
     if (!query) return SNIPPETS;
@@ -254,7 +298,7 @@ namespace san {
           <button onClick={() => setActiveTab('DOCS')} className={`hover:text-amber-400 transition-colors ${activeTab === 'DOCS' ? 'text-amber-400' : ''}`}>Documentation</button>
           <button onClick={handleDownloadCore} disabled={isDownloading} className="px-5 py-2 bg-amber-500 text-slate-950 rounded-full font-bold hover:bg-amber-400 transition-all transform active:scale-95 flex items-center gap-2 relative">
             {isDownloading && <div className="animate-spin w-3 h-3 border-2 border-slate-950 border-t-transparent rounded-full" />}
-            Download SDK v1.0
+            Download SPL SDK
             {downloadFeedback && <span className="absolute -bottom-10 left-1/2 -translate-x-1/2 px-3 py-1 bg-emerald-500 text-slate-950 text-[10px] font-bold rounded-lg animate-in slide-in-from-top-2 fade-in whitespace-nowrap">{downloadFeedback}</span>}
           </button>
         </div>
@@ -265,10 +309,10 @@ namespace san {
           <section className="relative px-8 py-24 flex flex-col items-center text-center overflow-hidden">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-amber-500/10 blur-[120px] rounded-full pointer-events-none"></div>
             <h1 className="text-6xl md:text-8xl font-black mb-6 tracking-tight devanagari"> कोडिंग् इदानीं <span className="text-amber-500">सरलम्</span> </h1>
-            <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mb-12 font-light leading-relaxed"> Experience the world's first programming language where <span className="text-slate-200 font-semibold">semantic meaning</span> precedes order. A local C++ core engine designed for high-performance logic. </p>
+            <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mb-12 font-light leading-relaxed"> The SPL compiler (splc) provides a revolutionary local development environment. Offline-first, semantic-driven, and highly optimized. </p>
             <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-              <button onClick={() => setActiveTab('PLAYGROUND')} className="px-8 py-4 bg-slate-100 text-slate-950 rounded-xl font-bold text-lg hover:bg-white transition-all shadow-xl">Try the Playground</button>
-              <button onClick={() => setActiveTab('DOCS')} className="px-8 py-4 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all">Read Documentation</button>
+              <button onClick={() => setActiveTab('PLAYGROUND')} className="px-8 py-4 bg-slate-100 text-slate-950 rounded-xl font-bold text-lg hover:bg-white transition-all shadow-xl">Open Terminal</button>
+              <button onClick={() => setActiveTab('DOCS')} className="px-8 py-4 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all">Read Specs</button>
             </div>
           </section>
         </main>
@@ -278,9 +322,18 @@ namespace san {
         <main className="flex-1 overflow-y-auto px-8 py-16 bg-slate-950">
           <div className="max-w-4xl mx-auto space-y-16 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <header className="border-b border-slate-800 pb-12">
-              <h1 className="text-5xl font-black mb-6 text-white tracking-tight">Language Documentation</h1>
-              <p className="text-xl text-slate-400 font-light leading-relaxed"> Welcome to the formal specification of Sanskritam (v1.0). Built on the principle of Anvaya—semantic connection. </p>
+              <h1 className="text-5xl font-black mb-6 text-white tracking-tight">SPL Specification</h1>
+              <p className="text-xl text-slate-400 font-light leading-relaxed"> Sanskritam Programming Language (SPL) - Version 1.0.4 </p>
             </header>
+            <section className="space-y-8">
+              <h2 className="text-2xl font-bold text-amber-500 uppercase tracking-widest flex items-center gap-3"><span className="w-8 h-[2px] bg-amber-500"></span>Compiler CLI</h2>
+              <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl font-mono text-sm space-y-2">
+                <div className="text-amber-500">$ splc project.spl</div>
+                <div className="text-slate-400"># Compiles the .spl file into a binary (simulated)</div>
+                <div className="text-amber-500">$ splc *.spl</div>
+                <div className="text-slate-400"># Compiles all SPL files in the directory</div>
+              </div>
+            </section>
             <section className="space-y-8">
               <h2 className="text-2xl font-bold text-amber-500 uppercase tracking-widest flex items-center gap-3"><span className="w-8 h-[2px] bg-amber-500"></span>Core Keywords</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -301,10 +354,10 @@ namespace san {
         <main className="flex-1 flex flex-col md:flex-row p-6 gap-6 bg-slate-950 overflow-hidden">
           <div className="w-full md:w-80 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
             <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl">
-              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Local SPL Engine</h2>
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Local SPL Compiler</h2>
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-slate-400 mb-2 block">Script Interface</label>
+                  <label className="text-xs text-slate-400 mb-2 block">Source Script</label>
                   <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800 rounded-lg">
                     <button onClick={() => scriptMode !== ScriptMode.ROMAN && toggleScript()} className={`py-2 rounded text-xs font-bold transition-all ${scriptMode === ScriptMode.ROMAN ? 'bg-amber-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>Roman</button>
                     <button onClick={() => scriptMode !== ScriptMode.DEVANAGARI && toggleScript()} className={`py-2 rounded text-xs font-bold transition-all devanagari ${scriptMode === ScriptMode.DEVANAGARI ? 'bg-amber-500 text-slate-950 shadow-lg' : 'text-slate-400 hover:text-white'}`}>देवनागरी</button>
@@ -313,19 +366,19 @@ namespace san {
 
                 {!isDebugMode ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <button onClick={runCode} disabled={isLoading || isLinting} className="py-4 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 text-slate-950 font-black rounded-xl transition-all shadow-xl shadow-amber-500/10 flex items-center justify-center space-x-2">
-                      {isLoading ? <div className="animate-spin w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full" /> : <span>Run</span>}
+                    <button onClick={() => runCode(true)} disabled={isLoading || isLinting} className="py-4 bg-amber-500 hover:bg-amber-400 disabled:bg-slate-700 text-slate-950 font-black rounded-xl transition-all shadow-xl shadow-amber-500/10 flex items-center justify-center space-x-2">
+                      {isLoading ? <div className="animate-spin w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full" /> : <span>splc run</span>}
                     </button>
                     <button onClick={startDebug} disabled={isLoading || isLinting} className="py-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:bg-slate-900 text-slate-200 font-bold rounded-xl transition-all flex items-center justify-center space-x-2">
                       <svg className="w-4 h-4 text-amber-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 11-5.112-.3c.297-1.28.73-2.52 1.233-3.676a1 1 0 10-1.843-.782c-.643 1.514-1.168 3.125-1.517 4.792a4.64 4.64 0 008.203 3.52c.163-.13.318-.27.466-.421l.006-.007a33.35 33.35 0 01.763-4.427c.25-1.07.56-2.146.936-3.052.177-.428.388-.838.642-1.229.255-.392.571-.776.993-1.058a1 1 0 00.128-1.548z" clipRule="evenodd" /><path d="M6.031 8.045a1.5 1.5 0 10-3.002.041 1.5 1.5 0 003.002-.041z" /></svg>
-                      <span>Debug</span>
+                      <span>splc debug</span>
                     </button>
                   </div>
                 ) : (
                   <div className="p-4 bg-slate-950 border border-amber-500/30 rounded-xl space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold text-amber-500 animate-pulse flex items-center gap-1">
-                        <span className="w-1 h-1 rounded-full bg-amber-500"></span> DEBUGGING ACTIVE
+                        <span className="w-1 h-1 rounded-full bg-amber-500"></span> DEBUG ACTIVE
                       </span>
                       <button onClick={stopDebug} className="text-slate-500 hover:text-white transition-colors">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -333,7 +386,7 @@ namespace san {
                     </div>
                     <div className="space-y-1">
                       <div className="flex justify-between items-center text-[8px] text-slate-500 font-mono uppercase tracking-widest">
-                        <span>Timeline Traverse</span>
+                        <span>Traverse Snapshot</span>
                         <span>{stepIndex + 1} / {output?.debugTrace?.length || 1}</span>
                       </div>
                       <input type="range" min="0" max={(output?.debugTrace?.length || 1) - 1} value={stepIndex} onChange={handleSliderChange} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" />
@@ -346,12 +399,6 @@ namespace san {
                       <button onClick={stepNext} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg></button>
                       <button onClick={continueExecution} className="p-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
                     </div>
-                    {isPlaying && (
-                      <div className="pt-2">
-                        <div className="flex justify-between text-[7px] text-slate-500 uppercase font-bold mb-1"><span>Speed Control</span><span>{playSpeed}ms</span></div>
-                        <input type="range" min="100" max="2000" step="100" value={playSpeed} onChange={(e) => setPlaySpeed(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -367,12 +414,12 @@ namespace san {
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-[10px] text-slate-600 text-center italic space-y-2">
                   <svg className="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <span>Enter debug mode to watch memory</span>
+                  <span>Attach splc debugger to watch memory</span>
                 </div>
               )}
             </div>
 
-            <div className="h-48 shadow-xl"><ExecutionChart data={executionChartData} title="Semantic Frequency" /></div>
+            <div className="h-48 shadow-xl"><ExecutionChart data={executionChartData} title="SPL Token Analysis" /></div>
             <div className="flex-1 bg-slate-900 border border-slate-800 rounded-2xl p-6 overflow-hidden shadow-xl min-h-[300px]"><Visualizer tokens={output?.tokens || []} /></div>
           </div>
 
@@ -384,25 +431,25 @@ namespace san {
               <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <div className="flex items-center gap-3">
-                        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">Library Snippets</h3>
+                        <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap">SPL Examples</h3>
                         <div className="h-4 w-px bg-slate-800 hidden sm:block"></div>
                     </div>
                     <div className="relative group max-w-xs w-full">
                         <svg className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                        <input type="text" placeholder="Search snippets..." value={snippetSearchQuery} onChange={(e) => setSnippetSearchQuery(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-[10px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all" />
+                        <input type="text" placeholder="Search .spl snippets..." value={snippetSearchQuery} onChange={(e) => setSnippetSearchQuery(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-[10px] text-slate-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all" />
                     </div>
                 </div>
                 <div className="flex gap-3 overflow-x-auto pb-2 custom-scrollbar min-h-[90px]">
                     {filteredSnippets.length > 0 ? filteredSnippets.map((snippet, idx) => (
                         <button key={idx} onClick={() => loadSnippet(snippet)} className="flex-shrink-0 w-48 p-3 rounded-lg bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-800 transition-all text-left group">
                             <div className="flex items-center justify-between mb-2">
-                                <div className="w-6 h-6 bg-amber-500/10 rounded flex items-center justify-center group-hover:bg-amber-500/20 transition-colors"><svg className="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg></div>
+                                <div className="w-6 h-6 bg-amber-500/10 rounded flex items-center justify-center group-hover:bg-amber-500/20 transition-colors font-mono text-[8px] font-bold text-amber-500 flex items-center justify-center">SPL</div>
                                 <span className="text-[8px] font-bold bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded uppercase">{scriptMode}</span>
                             </div>
                             <div className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition-colors mb-1 truncate">{snippet.name}</div>
                             <div className="text-[10px] text-slate-500 line-clamp-1">{snippet.description}</div>
                         </button>
-                    )) : <div className="flex-1 flex items-center justify-center py-6 text-[10px] text-slate-600 italic border border-dashed border-slate-800 rounded-xl">No matches found</div>}
+                    )) : <div className="flex-1 flex items-center justify-center py-6 text-[10px] text-slate-600 italic border border-dashed border-slate-800 rounded-xl">No SPL matches found</div>}
                 </div>
               </div>
             </div>
@@ -410,42 +457,63 @@ namespace san {
             <div className="h-64 bg-slate-900 border border-slate-800 rounded-2xl flex flex-col overflow-hidden shadow-xl">
               <div className="px-4 py-2 border-b border-slate-800 flex items-center justify-between">
                 <div className="flex items-center space-x-1">
-                    <button onClick={() => setConsoleTab('STDOUT')} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${consoleTab === 'STDOUT' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>Stdout</button>
-                    <button onClick={() => setConsoleTab('CPP')} disabled={!output} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${!output ? 'opacity-30 cursor-not-allowed' : ''} ${consoleTab === 'CPP' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>C++</button>
-                    <button onClick={() => setConsoleTab('LOGIC')} disabled={!output} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${!output ? 'opacity-30 cursor-not-allowed' : ''} ${consoleTab === 'LOGIC' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>Logic</button>
+                    <button onClick={() => setConsoleTab('STDOUT')} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${consoleTab === 'STDOUT' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>Output</button>
+                    <button onClick={() => setConsoleTab('CPP')} disabled={!output} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${!output ? 'opacity-30 cursor-not-allowed' : ''} ${consoleTab === 'CPP' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>C++ Build</button>
+                    <button onClick={() => setConsoleTab('TERMINAL')} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${consoleTab === 'TERMINAL' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>splc shell</button>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-2 mr-2"><span className="text-[9px] font-bold text-slate-500 uppercase">Verbose</span><button onClick={() => setVerboseMode(!verboseMode)} className={`w-7 h-3.5 rounded-full transition-colors relative ${verboseMode ? 'bg-amber-500' : 'bg-slate-700'}`}><div className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all ${verboseMode ? 'left-4' : 'left-0.5'}`} /></button></div>
-                  {output && !isDebugMode && <span className="text-[10px] text-green-500 font-mono hidden sm:inline">Execution Success</span>}
-                  {isDebugMode && <span className="text-[10px] text-amber-500 font-mono animate-pulse hidden sm:inline">Debug Tracking</span>}
+                  {output && !isDebugMode && <span className="text-[10px] text-green-500 font-mono hidden sm:inline">Build Success</span>}
                 </div>
               </div>
-              <div className="flex-1 p-4 font-mono text-sm overflow-y-auto whitespace-pre-wrap">
-                {engineError && <div className="text-red-400">System Error: {engineError}</div>}
-                {errors.length > 0 && !isLoading && (
-                  <div className="space-y-2 mb-4"><div className="text-red-400 font-bold underline">Compilation Errors:</div>{errors.map((err, idx) => (<div key={idx} className="text-red-400/80 text-xs">• L{err.line}, C{err.column}: {err.message}</div>))}</div>
-                )}
-                {!output && !isLoading && !engineError && errors.length === 0 && <div className="text-slate-600 italic">Ready for instruction...</div>}
-                {isLoading && <div className="text-amber-500/50 animate-pulse">Consulting Sanskritam VM Engine...</div>}
-                {consoleTab === 'STDOUT' && (
-                    <div className="flex flex-col gap-2">
-                        {output && !isDebugMode && errors.length === 0 && !verboseMode && (<div className="text-amber-400 font-bold">{output.stdout || '> Output null'}</div>)}
-                        {(isDebugMode || (output && verboseMode)) && output?.debugTrace && (
-                            <div className="space-y-1">{output.debugTrace.slice(0, stepIndex + 1).map((snap, i) => (
-                                <div key={i} className={`flex flex-col border-l-2 pl-3 py-1 ${i === stepIndex && isDebugMode ? 'border-amber-500 bg-amber-500/5' : 'border-slate-800 opacity-60'}`}>
-                                  <div className="flex items-center gap-2 text-[10px]"><span className="text-amber-500 font-bold">L{snap.line}</span><span className="text-slate-400 font-mono italic truncate">{codeLines[snap.line-1]}</span></div>
-                                  {i === 0 ? snap.stdout && <div className="text-amber-400 font-bold ml-2 mt-1">{snap.stdout}</div> : snap.stdout !== output.debugTrace[i-1].stdout && <div className="text-amber-400 font-bold ml-2 mt-1">{snap.stdout.replace(output.debugTrace[i-1].stdout, '')}</div>}
-                                </div>
-                            ))}</div>
-                        )}
-                        {output && !isDebugMode && executionTime !== null && (
-                          <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-4 text-[9px] text-slate-500 font-bold uppercase tracking-widest"><div className="flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-full border border-slate-800"><svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Time: <span className="text-amber-400">{executionTime.toFixed(2)}ms</span></div></div>
-                        )}
+              <div className="flex-1 p-4 font-mono text-sm overflow-y-auto whitespace-pre-wrap relative bg-slate-950/20">
+                {consoleTab === 'TERMINAL' ? (
+                  <div className="flex flex-col h-full">
+                    <div className="flex-1 space-y-1 overflow-y-auto mb-2 custom-scrollbar">
+                      {terminalLines.map((line, i) => (
+                        <div key={i} className={`text-xs ${line.startsWith('>') ? 'text-amber-500 font-bold' : 'text-slate-400'}`}>{line}</div>
+                      ))}
+                      <div ref={terminalEndRef} />
                     </div>
+                    <form onSubmit={handleTerminalSubmit} className="flex items-center gap-2 border-t border-slate-800 pt-2">
+                      <span className="text-amber-500 font-bold">$</span>
+                      <input 
+                        type="text" 
+                        value={terminalInput}
+                        onChange={(e) => setTerminalInput(e.target.value)}
+                        placeholder="splc *.spl"
+                        className="bg-transparent border-none outline-none text-xs text-white w-full placeholder-slate-700"
+                      />
+                    </form>
+                  </div>
+                ) : (
+                  <>
+                    {engineError && <div className="text-red-400">System Error: {engineError}</div>}
+                    {errors.length > 0 && !isLoading && (
+                      <div className="space-y-2 mb-4"><div className="text-red-400 font-bold underline">Compilation Errors:</div>{errors.map((err, idx) => (<div key={idx} className="text-red-400/80 text-xs">• L{err.line}, C{err.column}: {err.message}</div>))}</div>
+                    )}
+                    {!output && !isLoading && !engineError && errors.length === 0 && <div className="text-slate-600 italic">Ready for instruction...</div>}
+                    {isLoading && <div className="text-amber-500/50 animate-pulse">Running splc...</div>}
+                    {consoleTab === 'STDOUT' && (
+                        <div className="flex flex-col gap-2">
+                            {output && !isDebugMode && errors.length === 0 && !verboseMode && (<div className="text-amber-400 font-bold">{output.stdout || '> Output null'}</div>)}
+                            {(isDebugMode || (output && verboseMode)) && output?.debugTrace && (
+                                <div className="space-y-1">{output.debugTrace.slice(0, stepIndex + 1).map((snap, i) => (
+                                    <div key={i} className={`flex flex-col border-l-2 pl-3 py-1 ${i === stepIndex && isDebugMode ? 'border-amber-500 bg-amber-500/5' : 'border-slate-800 opacity-60'}`}>
+                                      <div className="flex items-center gap-2 text-[10px]"><span className="text-amber-500 font-bold">L{snap.line}</span><span className="text-slate-400 font-mono italic truncate">{codeLines[snap.line-1]}</span></div>
+                                      {i === 0 ? snap.stdout && <div className="text-amber-400 font-bold ml-2 mt-1">{snap.stdout}</div> : snap.stdout !== output.debugTrace[i-1].stdout && <div className="text-amber-400 font-bold ml-2 mt-1">{snap.stdout.replace(output.debugTrace[i-1].stdout, '')}</div>}
+                                    </div>
+                                ))}</div>
+                            )}
+                            {output && !isDebugMode && executionTime !== null && (
+                              <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center gap-4 text-[9px] text-slate-500 font-bold uppercase tracking-widest"><div className="flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-full border border-slate-800"><svg className="w-3 h-3 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Build Time: <span className="text-amber-400">{executionTime.toFixed(2)}ms</span></div></div>
+                            )}
+                        </div>
+                    )}
+                    {consoleTab === 'CPP' && output && <pre className="text-slate-300 bg-slate-950/50 p-4 rounded-xl text-xs border border-slate-800 leading-relaxed">{output.transpiled}</pre>}
+                  </>
                 )}
-                {consoleTab === 'CPP' && output && <pre className="text-slate-300 bg-slate-950/50 p-4 rounded-xl text-xs border border-slate-800 leading-relaxed">{output.transpiled}</pre>}
-                {consoleTab === 'LOGIC' && output && <div className="text-slate-300 bg-slate-800/30 p-4 rounded-xl border border-slate-800 text-sm italic">{output.explanation}</div>}
-                {isLinting && !isLoading && !isDebugMode && <div className="text-[10px] text-slate-500 absolute bottom-2 right-4 animate-pulse">Syntax Review in Progress...</div>}
+                {isLinting && !isLoading && !isDebugMode && <div className="text-[10px] text-slate-500 absolute bottom-2 right-4 animate-pulse font-mono tracking-tighter">splc --lint in progress...</div>}
               </div>
             </div>
           </div>
@@ -453,7 +521,7 @@ namespace san {
       )}
 
       <footer className="px-8 py-8 border-t border-slate-900 text-slate-600 text-xs flex flex-col md:flex-row items-center justify-between gap-4">
-        <div>© 2024 Sanskritam Language Core. Dual-Script Native Architecture.</div>
+        <div>© 2024 Sanskritam Language Core. Dual-Script Native Architecture (.spl)</div>
         <div className="flex space-x-6"><a href="#" className="hover:text-slate-400">Github</a><a href="#" className="hover:text-slate-400">Twitter</a></div>
       </footer>
     </div>

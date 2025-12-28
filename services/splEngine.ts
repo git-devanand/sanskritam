@@ -299,37 +299,133 @@ export class SPLEngine {
   }
 
   private generateCpp(): string {
-    let cpp = `#include "Sanskritam.h"\n\nint main() {\n`;
-    let indent = "  ";
-    
-    // Simple line-by-line transpilation for demo purposes
-    this.codeLines.forEach(line => {
-      let trimmed = line.trim();
-      if (!trimmed) return;
-      
-      if (trimmed.startsWith('//')) {
-        cpp += `${indent}${trimmed}\n`;
-        return;
+    let cpp = `#include "Sanskritam.h"\n#include <vector>\n#include <string>\n#include <functional>\n\nint main() {\n`;
+    let indentLevel = 1;
+    let i = 0;
+
+    const getIndent = () => "  ".repeat(indentLevel);
+    const getKeywordType = (val: string) => {
+      for (const [key, kw] of Object.entries(KEYWORDS)) {
+        if (kw.roman === val || kw.devanagari === val) return key;
+      }
+      return null;
+    };
+
+    while (i < this.tokens.length) {
+      const token = this.tokens[i];
+      const type = getKeywordType(token.value);
+
+      if (i === 0 || this.tokens[i - 1].line !== token.line) {
+        cpp += getIndent();
       }
 
-      // Mapping logic
-      Object.entries(KEYWORDS).forEach(([key, kw]) => {
-        const regex = new RegExp(`\\b(${kw.roman}|${kw.devanagari})\\b`, 'g');
-        if (key === 'PRINT') trimmed = trimmed.replace(regex, 'san::vadatu(') + ');';
-        else if (key === 'VALUE') trimmed = trimmed.replace(regex, 'auto ');
-        else if (key === 'IF') trimmed = trimmed.replace(regex, 'if (') ;
-        else if (key === 'THEN') trimmed = trimmed.replace(regex, ') {');
-        else if (key === 'END') trimmed = trimmed.replace(regex, '}');
-      });
+      switch (type) {
+        case 'VALUE':
+          cpp += "auto ";
+          break;
+        case 'PRINT':
+          cpp += "san::vadatu(";
+          // Look ahead to end of line to close parenthesis
+          let j = i + 1;
+          while (j < this.tokens.length && this.tokens[j].line === token.line) {
+            const innerType = getKeywordType(this.tokens[j].value);
+            if (innerType === 'THEN' || innerType === 'END') break;
+            
+            // Map literals within vadatu
+            const it = this.tokens[j];
+            const itType = getKeywordType(it.value);
+            if (itType === 'TRUE') cpp += "true";
+            else if (itType === 'FALSE') cpp += "false";
+            else if (itType === 'NULL') cpp += "nullptr";
+            else if (it.type === 'STRING') cpp += `"${it.value}"`;
+            else cpp += it.value;
+            
+            if (j + 1 < this.tokens.length && this.tokens[j+1].line === token.line) cpp += " ";
+            j++;
+          }
+          cpp += ");";
+          i = j - 1;
+          break;
+        case 'IF':
+          cpp += "if (";
+          break;
+        case 'WHILE':
+          cpp += "while (";
+          break;
+        case 'FOR':
+          cpp += "for (";
+          break;
+        case 'FUNCTION':
+          const funcName = this.tokens[i + 1]?.value;
+          cpp += `auto ${funcName} = [&](`;
+          // Skip until '(' if present or just handle parameters
+          i++; // move to name
+          break;
+        case 'THEN':
+          // Close condition parens if in if/while/for
+          const prevKeyword = i > 0 ? getKeywordType(this.tokens[i-1].value) : null;
+          cpp += ") {";
+          indentLevel++;
+          break;
+        case 'ELSE':
+          indentLevel--;
+          cpp = cpp.trimEnd() + "\n" + getIndent() + "} else {";
+          indentLevel++;
+          break;
+        case 'END':
+          indentLevel--;
+          cpp = cpp.trimEnd() + "\n" + getIndent() + "}";
+          // If it was a function, add semicolon
+          break;
+        case 'RETURN':
+          cpp += "return ";
+          break;
+        case 'BREAK':
+          cpp += "break;";
+          break;
+        case 'CONTINUE':
+          cpp += "continue;";
+          break;
+        case 'TRUE': cpp += "true"; break;
+        case 'FALSE': cpp += "false"; break;
+        case 'NULL': cpp += "nullptr"; break;
+        default:
+          if (token.type === 'STRING') cpp += `"${token.value}"`;
+          else cpp += token.value;
+      }
 
-      // Cleanup
-      trimmed = trimmed.replace(/= (.+)\b/, '= $1;');
-      if (trimmed.includes('if') && !trimmed.endsWith('{')) trimmed += ')';
+      // Semicolon handling for assignments and simple expressions
+      const nextToken = this.tokens[i + 1];
+      const isEndOfLine = !nextToken || nextToken.line !== token.line;
+      const currentTokenKeyword = getKeywordType(token.value);
+      
+      if (isEndOfLine && !['THEN', 'END', 'IF', 'WHILE', 'FOR', 'ELSE', 'PRINT'].includes(currentTokenKeyword || "")) {
+         if (!cpp.endsWith(';') && !cpp.endsWith('{') && !cpp.endsWith('}')) {
+            cpp += ";";
+         }
+      }
 
-      cpp += `${indent}${trimmed}\n`;
-    });
+      if (isEndOfLine) {
+        cpp += "\n";
+      } else {
+        // Space between tokens on same line
+        if (!cpp.endsWith('(') && !cpp.endsWith('[')) {
+           cpp += " ";
+        }
+      }
 
-    cpp += `  return 0;\n}`;
+      i++;
+    }
+
+    // Close main
+    if (indentLevel > 0) {
+      while (indentLevel > 1) {
+        indentLevel--;
+        cpp += getIndent() + "}\n";
+      }
+      cpp += "  return 0;\n}";
+    }
+
     return cpp;
   }
 }
