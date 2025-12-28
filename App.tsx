@@ -6,7 +6,7 @@ import Editor from './components/Editor';
 import Visualizer from './components/Visualizer';
 import ExecutionChart from './components/ExecutionChart';
 import ScopeVisualizer from './components/ScopeVisualizer';
-import { processSanskritamCode } from './services/geminiService';
+import { SPLEngine } from './services/splEngine';
 import JSZip from 'jszip';
 import FileSaver from 'file-saver';
 
@@ -80,7 +80,11 @@ const App: React.FC = () => {
 #ifndef SANSKRITAM_H
 #define SANSKRITAM_H
 #include <iostream>
-namespace san { template<typename T> void vadatu(T val) { std::cout << val << std::endl; } }
+#include <string>
+namespace san { 
+    template<typename T> void vadatu(T val) { std::cout << val << std::endl; }
+    void vadatu(const std::string& val) { std::cout << val << std::endl; }
+}
 #endif`;
       zip.file('Sanskritam.h', runtimeHeader.trim());
       const readme = `# Sanskritam SDK Starter Kit v1.0\n\nKeywords:\n${Object.entries(KEYWORDS).map(([k, v]) => `- ${k}: ${v.roman} / ${v.devanagari}`).join('\n')}`;
@@ -99,14 +103,14 @@ namespace san { template<typename T> void vadatu(T val) { std::cout << val << st
 
   useEffect(() => {
     if (activeTab !== 'PLAYGROUND' || isDebugMode) return;
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       if (!code.trim()) { setErrors([]); return; }
       setIsLinting(true);
-      try {
-        const result = await processSanskritamCode(code, scriptMode, 'lint');
-        setErrors(result.errors || []);
-      } catch (err) { console.warn("Linting failed", err); } finally { setIsLinting(false); }
-    }, 1500);
+      const engine = new SPLEngine(code, scriptMode);
+      const result = engine.execute();
+      setErrors(result.errors || []);
+      setIsLinting(false);
+    }, 500);
     return () => clearTimeout(timer);
   }, [code, scriptMode, activeTab, isDebugMode]);
 
@@ -117,13 +121,20 @@ namespace san { template<typename T> void vadatu(T val) { std::cout << val << st
     stopDebug();
     setConsoleTab('STDOUT');
     const startTime = performance.now();
+    
     try {
-      const result = await processSanskritamCode(code, scriptMode, 'debug');
+      const engine = new SPLEngine(code, scriptMode);
+      const result = engine.execute();
       const endTime = performance.now();
+      
       setExecutionTime(endTime - startTime);
       setOutput(result);
       setErrors(result.errors || []);
-    } catch (err: any) { setEngineError(err.message || 'Execution failed'); } finally { setIsLoading(false); }
+    } catch (err: any) { 
+      setEngineError(err.message || 'Execution failed'); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const startDebug = async () => {
@@ -132,13 +143,25 @@ namespace san { template<typename T> void vadatu(T val) { std::cout << val << st
     setExecutionTime(null);
     setIsDebugMode(false);
     setConsoleTab('STDOUT');
+    
     try {
-      const result = await processSanskritamCode(code, scriptMode, 'debug');
-      if (result.errors && result.errors.length > 0) { setErrors(result.errors); setIsLoading(false); return; }
+      const engine = new SPLEngine(code, scriptMode);
+      const result = engine.execute();
+      
+      if (result.errors && result.errors.length > 0) { 
+        setErrors(result.errors); 
+        setIsLoading(false); 
+        return; 
+      }
+      
       setOutput(result);
       setStepIndex(0);
       setIsDebugMode(true);
-    } catch (err: any) { setEngineError(err.message || 'Debug failed'); } finally { setIsLoading(false); }
+    } catch (err: any) { 
+      setEngineError(err.message || 'Debug failed'); 
+    } finally { 
+      setIsLoading(false); 
+    }
   };
 
   const stopDebug = () => {
@@ -242,10 +265,10 @@ namespace san { template<typename T> void vadatu(T val) { std::cout << val << st
           <section className="relative px-8 py-24 flex flex-col items-center text-center overflow-hidden">
             <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-amber-500/10 blur-[120px] rounded-full pointer-events-none"></div>
             <h1 className="text-6xl md:text-8xl font-black mb-6 tracking-tight devanagari"> कोडिंग् इदानीं <span className="text-amber-500">सरलम्</span> </h1>
-            <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mb-12 font-light leading-relaxed"> Experience the world's first programming language where <span className="text-slate-200 font-semibold">semantic meaning</span> precedes order. A C++ core wrapper designed for AI Transformers. </p>
+            <p className="text-xl md:text-2xl text-slate-400 max-w-3xl mb-12 font-light leading-relaxed"> Experience the world's first programming language where <span className="text-slate-200 font-semibold">semantic meaning</span> precedes order. A local C++ core engine designed for high-performance logic. </p>
             <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
               <button onClick={() => setActiveTab('PLAYGROUND')} className="px-8 py-4 bg-slate-100 text-slate-950 rounded-xl font-bold text-lg hover:bg-white transition-all shadow-xl">Try the Playground</button>
-              <button onClick={() => setActiveTab('DOCS')} className="px-8 py-4 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all">Read Whitepaper</button>
+              <button onClick={() => setActiveTab('DOCS')} className="px-8 py-4 bg-slate-800 border border-slate-700 text-slate-200 rounded-xl font-bold text-lg hover:bg-slate-700 transition-all">Read Documentation</button>
             </div>
           </section>
         </main>
@@ -278,7 +301,7 @@ namespace san { template<typename T> void vadatu(T val) { std::cout << val << st
         <main className="flex-1 flex flex-col md:flex-row p-6 gap-6 bg-slate-950 overflow-hidden">
           <div className="w-full md:w-80 flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
             <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl">
-              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Sanskritam Engine</h2>
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4">Local SPL Engine</h2>
               <div className="space-y-4">
                 <div>
                   <label className="text-xs text-slate-400 mb-2 block">Script Interface</label>
