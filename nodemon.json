@@ -1,0 +1,12 @@
+{
+  "watch": [
+    "server.js",
+    "services"
+  ],
+  "ext": "js,ts",
+  "ignore": [
+    "src/",
+    "components/"
+  ],
+  "exec": "node server.js"
+}

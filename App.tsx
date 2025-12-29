@@ -380,7 +380,7 @@ namespace san {
                       <span className="text-[10px] font-bold text-amber-500 animate-pulse flex items-center gap-1">
                         <span className="w-1 h-1 rounded-full bg-amber-500"></span> DEBUG ACTIVE
                       </span>
-                      <button onClick={stopDebug} className="text-slate-500 hover:text-white transition-colors">
+                      <button onClick={stopDebug} title="Stop Debug" className="text-slate-500 hover:text-white transition-colors">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
                     </div>
@@ -389,15 +389,15 @@ namespace san {
                         <span>Traverse Snapshot</span>
                         <span>{stepIndex + 1} / {output?.debugTrace?.length || 1}</span>
                       </div>
-                      <input type="range" min="0" max={(output?.debugTrace?.length || 1) - 1} value={stepIndex} onChange={handleSliderChange} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" />
+                      <input type="range" min="0" max={(output?.debugTrace?.length || 1) - 1} value={stepIndex} onChange={handleSliderChange} title="Traverse execution snapshots" className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-amber-500" />
                     </div>
                     <div className="grid grid-cols-4 gap-1.5">
-                      <button onClick={stepBack} disabled={stepIndex === 0} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center disabled:opacity-20 transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg></button>
+                      <button onClick={stepBack} disabled={stepIndex === 0} title="Step Back" className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center disabled:opacity-20 transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"/></svg></button>
                       <button onClick={togglePlay} className={`p-2 rounded-lg flex items-center justify-center transition-all ${isPlaying ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-500 hover:bg-slate-700'}`}>
                         {isPlaying ? <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg> : <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>}
                       </button>
-                      <button onClick={stepNext} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg></button>
-                      <button onClick={continueExecution} className="p-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
+                      <button onClick={stepNext} title="Step Next" className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/></svg></button>
+                      <button onClick={continueExecution} title="Continue Execution" className="p-2 bg-slate-800 hover:bg-slate-700 text-emerald-400 rounded-lg flex items-center justify-center transition-all"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
                     </div>
                   </div>
                 )}
@@ -462,7 +462,7 @@ namespace san {
                     <button onClick={() => setConsoleTab('TERMINAL')} className={`text-[10px] px-3 py-1 rounded-md font-bold uppercase tracking-widest transition-all ${consoleTab === 'TERMINAL' ? 'bg-amber-500 text-slate-950 shadow-md' : 'text-slate-500 hover:text-slate-300'}`}>splc shell</button>
                 </div>
                 <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 mr-2"><span className="text-[9px] font-bold text-slate-500 uppercase">Verbose</span><button onClick={() => setVerboseMode(!verboseMode)} className={`w-7 h-3.5 rounded-full transition-colors relative ${verboseMode ? 'bg-amber-500' : 'bg-slate-700'}`}><div className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all ${verboseMode ? 'left-4' : 'left-0.5'}`} /></button></div>
+                  <div className="flex items-center gap-2 mr-2"><span className="text-[9px] font-bold text-slate-500 uppercase">Verbose</span><button onClick={() => setVerboseMode(!verboseMode)} title="Toggle verbose mode" className={`w-7 h-3.5 rounded-full transition-colors relative ${verboseMode ? 'bg-amber-500' : 'bg-slate-700'}`}><div className={`absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all ${verboseMode ? 'left-4' : 'left-0.5'}`} /></button></div>
                   {output && !isDebugMode && <span className="text-[10px] text-green-500 font-mono hidden sm:inline">Build Success</span>}
                 </div>
               </div>
